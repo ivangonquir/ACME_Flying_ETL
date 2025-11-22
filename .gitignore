@@ -3,3 +3,4 @@ __pycache__/
 *.log
 config/db_config.yaml
 .env
+.vscode/
