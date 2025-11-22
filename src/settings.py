@@ -11,7 +11,7 @@ CONFIG_PATH = f"{PROJECT_ROOT}/config/db_config.yaml"
 LOG_PATH = f"{PROJECT_ROOT}/logs/etl_execution.log"
 
 # path to raw staged data
-RAW_STAGING_DIR = f"{PROJECT_ROOT}/data/staging/raw_staging/"
+RAW_STAGING_DIR = f"{PROJECT_ROOT}/data/raw_staging/"
 
 # path to raw cleaned data
-CLEAN_STAGING_DIR = f"{PROJECT_ROOT}/data/staging/clean_staging/"
+CLEAN_STAGING_DIR = f"{PROJECT_ROOT}/data/clean_staging/"

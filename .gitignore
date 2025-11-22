@@ -4,3 +4,4 @@ __pycache__/
 config/db_config.yaml
 .env
 .vscode/
+data/
