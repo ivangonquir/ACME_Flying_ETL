@@ -77,7 +77,7 @@ CSV_EXTRACTION = {
         "sep": ",",
         "cols": ["aircraft_reg_code", "aircraft_model", "manufacturer"]
     },
-    "personnel-lookup": {
+    "personnel_lookup": {
         "source": "maintenance-personnel-airport-lookup.csv",
         "sep": ";",
         "cols": ["reporteurid", "airport"]

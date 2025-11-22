@@ -1,7 +1,7 @@
 import pandas as pd
 import logging
 import sys
-from .settings import LOG_PATH, RAW_STAGING_DIR
+from .settings import LOG_PATH, RAW_STAGING_DIR, CSV_PATH
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
@@ -23,13 +23,28 @@ def extract_table(db_connection, table_name, query):
         
         # store table into parquet file
         table.to_parquet(output_path, index=False)
-
         logging.info(f"Table {table_name} successfully extracted.")
     
     except Exception as e:
         logging.error(f"Error extracting {table_name}: {e}")
         raise e
     
-def extract_csv():
-    pass
+def extract_csv(table_name, config):
+    
+    output_path = f"{RAW_STAGING_DIR}/{table_name}.parquet"
+
+    try:
+        # read table from csv file
+        df = pd.read_csv(
+            f"{CSV_PATH}/{config['source']}", 
+            sep=config['sep'],
+            usecols=config['cols']
+        )
+
+        df.to_parquet(output_path, index=False)
+        logging.info(f"Table {table_name} successfully extracted.")
+    
+    except Exception as e:
+        logging.error(f"Error extracting {table_name}: {e}")
+        raise e
     
