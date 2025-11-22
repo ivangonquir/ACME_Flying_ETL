@@ -11,7 +11,7 @@ class DBConnector:
     - AIMS and AMOS databases (input data).
     - Target database (DW).
     """
-    def __init__(self, config_path="config/db_config.yaml"):
+    def __init__(self, config_path):
         # open file
         with open(config_path, 'r') as file:
             raw_content = file.read()

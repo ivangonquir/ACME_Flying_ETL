@@ -1,32 +1,40 @@
 import logging
 import sys
-from src.connectors import DBConnector
-
-# setup logging (only write on log file)
-# logging.basicConfig(filename='logs/etl_execution.log', level=logging.INFO, 
-#                     format='%(asctime)s:%(levelname)s:%(message)s')
+from src.settings import LOG_PATH, CONFIG_PATH
+from src.db_connection import DBConnector
+from src.extractors import extract_table
+from src.queries import AIMS_EXTRACTION, AMOS_EXTRACTION, CSV_EXTRACTION
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("logs/etl_execution.log"), 
+        logging.FileHandler(LOG_PATH), 
         logging.StreamHandler(sys.stdout)    
     ]
 )
 
-CONFIG_PATH = "config/db_config.yaml"
-
 def main():
     logging.info("ETL process started")
 
-    # initialization of DB connector
+    # initialization of DB connections
+    logging.info("Initializating DB connections...")
     dbc = DBConnector(config_path=CONFIG_PATH)
+    aims_connection = dbc.get_connection("aims")
+    logging.info("Connection with AIMS database established.")
+    amos_connection = dbc.get_connection("amos")
+    logging.info("Connection with AMOS database established.")
 
-    # extract data
-    logging.info("Extracting data...")
+    # extract data from AIMS database: iterate over each table query
+    logging.info("Extracting data from AIMS database...")
+    for table_name, query in AIMS_EXTRACTION.items():
+        extract_table(aims_connection, table_name, query)
 
+    # extract data from AMOS database: iterate over each table query
+    logging.info("Extracting data from AMOS database...")
+    for table_name, query in AMOS_EXTRACTION.items():
+        extract_table(amos_connection, table_name, query)
 
 if __name__=='__main__':
     main()
