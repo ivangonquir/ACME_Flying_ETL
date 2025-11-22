@@ -1,6 +1,9 @@
 import yaml
-from sqlalchemy import create_engine
 import os
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+
+load_dotenv()
 
 class DBConnector:
     """
@@ -9,33 +12,37 @@ class DBConnector:
     - Target database (DW).
     """
     def __init__(self, config_path="config/db_config.yaml"):
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        full_path = os.path.join(base_path, config_path)
+        # open file
+        with open(config_path, 'r') as file:
+            raw_content = file.read()
         
-        with open(full_path, 'r') as file:
-            self.config = yaml.safe_load(file)
+        # replace ${var} in .yaml with its real content from .env
+        expanded_content = os.path.expandvars(raw_content)
+
+        # convert expanded text in a python dict
+        self.config = yaml.safe_load(expanded_content)
         
         self.engines = {}
     
-    def get_connection(self, db_alias):
+    def get_connection(self, db_name):
         """
         Creates SQLAlchemy engines.
         Args:
-            db_alias (str): 'aims', 'amos', or 'dw'
+            db_name (str): 'aims', 'amos', or 'dw'
         """
-        if db_alias in self.engines:
-            return self.engines[db_alias]
+        if db_name in self.engines:
+            return self.engines[db_name]
 
-        # Fetch credentials based on the alias
-        if db_alias in self.config['sources']:
-            creds = self.config['sources'][db_alias]
-        elif db_alias in self.config['target']:
-            creds = self.config['target']['dw'] 
+        # fetch credentials based on the name
+        if db_name in self.config['sources']:
+            creds = self.config['sources'][db_name]
+        elif db_name in self.config['target']:
+            creds = self.config['target'][db_name] 
         else:
-            raise ValueError(f"Database alias '{db_alias}' not found in config.")
+            raise ValueError(f"Database with name '{db_name}' not found in config.")
 
-        # Create URL
-        # Format: dialect+driver://username:password@host:port/database
+        # create URL
+        # format: dialect+driver://username:password@host:port/database
         if creds['type'] == 'postgresql':
             url = f"postgresql+psycopg2://{creds['user']}:{creds['password']}@{creds['host']}:{creds['port']}/{creds['db']}"
         elif creds['type'] == 'oracle':
@@ -43,8 +50,8 @@ class DBConnector:
         else:
             raise ValueError(f"Unsupported DB type: {creds['type']}")
 
-        # Create the engine (Connection Pool)
+        # create the engine (connection pool)
         engine = create_engine(url, echo=False)
-        self.engines[db_alias] = engine
+        self.engines[db_name] = engine
         
         return engine 
