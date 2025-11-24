@@ -1,0 +1,28 @@
+sources:
+  aims:
+    type: postgresql
+    host: ${DB_HOST}
+    port: ${DB_PORT}
+    user: ${DB_USER}
+    password: ${DB_PASSWORD}
+    db: "AIMS"
+    schema: "public"
+
+  amos:
+    type: postgresql
+    host: ${DB_HOST}
+    port: ${DB_PORT}
+    user: ${DB_USER}
+    password: ${DB_PASSWORD}
+    db: "AMOS"
+    schema: "public"
+
+target:
+  dw:
+    type: oracle
+    host:
+    port:
+    user:
+    password:
+    db:
+    schema:
