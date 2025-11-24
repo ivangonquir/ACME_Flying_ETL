@@ -2,6 +2,7 @@ import yaml
 from sqlalchemy import create_engine
 import os
 
+
 class DBConnector:
     """
     Manages connection to:
