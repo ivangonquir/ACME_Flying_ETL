@@ -5,8 +5,10 @@ numpy==2.3.5
 oracledb==3.4.1
 pandas==2.3.3
 psycopg2-binary==2.9.11
+pyarrow==22.0.0
 pycparser==2.23
 python-dateutil==2.9.0.post0
+python-dotenv==1.2.1
 pytz==2025.2
 PyYAML==6.0.3
 six==1.17.0
