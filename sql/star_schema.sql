@@ -1,44 +1,52 @@
--- Dimension Tables
-CREATE TABLE AircraftDimension (
-    aircraftID SERIAL PRIMARY KEY,
-    model VARCHAR(100),
-    manufacturer VARCHAR(100),
-);
-
-CREATE TABLE PeopleDimension (
-    personID SERIAL PRIMARY KEY,
-    role VARCHAR(50),
-    airport VARCHAR(100)
+CREATE TABLE Months (
+    ID CHAR(7),
+    y NUMBER(4) NOT NULL,
+    PRIMARY KEY (ID)
 );
 
 CREATE TABLE TemporalDimension (
-    timeID SERIAL PRIMARY KEY,
-    monthID INT REFERENCES Months(monthID)
+    ID DATE,
+    monthID CHAR(7) NOT NULL,
+    PRIMARY KEY (ID),
+    FOREIGN KEY (monthID) REFERENCES Months (ID)
 );
 
-CREATE TABLE Months (
-    monthID INT PRIMARY KEY,
-    year INT
-)
-
--- Fact Tables
-CREATE TABLE AicraftUtilization (
-    timeID INT REFERENCES TemporalDimension(timeID),
-    aircraftID INT REFERENCES  AircraftDimension(aircraftID),
-    FlightHours NUMERIC,
-    FlightCycles INT,
-    ScheduledOutOfService INT,
-    UnscheduledOutOfService INT,
-    Delays INT,
-    Cancellations INT,
-    DelayedMinutes INT,
-    PRIMARY KEY (timeID, aircraftID)
+CREATE TABLE AircraftDimension (
+    ID CHAR(6),                            
+    model VARCHAR2(100) NOT NULL,          
+    manufacturer VARCHAR2(100) NOT NULL,   
+    PRIMARY KEY (ID)
 );
 
-CREATE TABLE LogbookReporting (
-    monthID INT REFERENCES Months(monthID),
-    personID INT REFERENCES PeopleDimension(personID),
-    aircraftID INT REFERENCES AircraftDimension(aircraftID),
-    counter INT,
-    PRIMARY KEY (monthID, personID, aircraftID)
+CREATE TABLE AircraftUtilization (
+    aircraftID CHAR(6),
+    timeID DATE,
+    scheduledOutOfService NUMBER(2),
+    unScheduledOutOfService NUMBER(2),
+    flightHours NUMBER(2),
+    flightCycles NUMBER(2),
+    delays NUMBER(2),
+    delayedMinutes NUMBER(3),
+    cancellations NUMBER(2),
+    PRIMARY KEY (aircraftID, timeID),
+    FOREIGN KEY (aircraftID) REFERENCES AircraftDimension(ID),
+    FOREIGN KEY (timeID) REFERENCES TemporalDimension(ID)
+);
+
+CREATE TABLE PeopleDimension (
+    ID CHAR(6),                                       
+    airport CHAR(3),
+    role CHAR(1) CHECK (role IN ('P','M')) NOT NULL,
+    PRIMARY KEY (ID)
+);
+
+CREATE TABLE LogBookReporting (
+    aircraftID CHAR(6),
+    monthID CHAR(7),
+    personID CHAR(6),
+    counter NUMBER(2) NOT NULL,
+    PRIMARY KEY (aircraftID, monthID, personID),
+    FOREIGN KEY (aircraftID) REFERENCES AircraftDimension(ID),
+    FOREIGN KEY (monthID) REFERENCES Months(ID),
+    FOREIGN KEY (personID) REFERENCES PeopleDimension(ID)
 );
