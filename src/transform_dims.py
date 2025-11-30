@@ -1,7 +1,7 @@
 import pandas as pd
 import logging
 import sys
-from .settings import LOG_PATH, RAW_STAGING_DIR
+from .settings import LOG_PATH, TRANSFORMED_STAGING_DIR
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
@@ -13,7 +13,9 @@ logging.basicConfig(
     ]
 )
 
-def create_aircraft_dim(flights, logbook, aircraft_lookup):
+def create_aircraft_dim(dim_name, flights, logbook, aircraft_lookup):
+    logging.info("Creating Aircraft dimension...")
+
     # extract aircraft IDs from flights and technical logbook
     aims_aircraft = flights[['aircraftregistration']].rename({'aircraftregistration': 'ID'}, axis=1)
     amos_aircraft = logbook[['aircraftregistration']].rename({'aircraftregistration': 'ID'}, axis=1)
@@ -43,9 +45,15 @@ def create_aircraft_dim(flights, logbook, aircraft_lookup):
     # keep relevant columns and rename them 
     dim_aircraft = dim_aircraft[['ID', 'aircraft_model', 'manufacturer']].rename({'aircraft_model': 'model'}, axis=1)
 
-    return dim_aircraft
+    # load dimension df into staging area
+    output_path = f'{TRANSFORMED_STAGING_DIR}/{dim_name}.parquet'
+    dim_aircraft.to_parquet(output_path, index=False)
 
-def create_people_dim(logbook, personnel_lookup):
+    logging.info("Aircraft dimension successfully created and staged.")
+
+def create_people_dim(dim_name, logbook, personnel_lookup):
+    logging.info("Creating People dimension...")
+
     # get unique reporteurs from logbook table
     logbook_people = logbook[['reporteurclass', 'reporteurid']].drop_duplicates()
 
@@ -78,7 +86,11 @@ def create_people_dim(logbook, personnel_lookup):
         'reporteurclass': 'role'
     })
 
-    return dim_people
+    # load dimension df into staging area
+    output_path = f'{TRANSFORMED_STAGING_DIR}/{dim_name}.parquet'
+    dim_people.to_parquet(output_path, index=False)
+
+    logging.info("People dimension successfully created and staged.")
 
 def get_date_agg(df, column_name, agg_type):
     """
@@ -86,52 +98,53 @@ def get_date_agg(df, column_name, agg_type):
         agg: min or max
     """
     series_tmp = pd.to_datetime(df[column_name])
-    series_tmp = series_tmp.dt.to_period('M')
     res = series_tmp.agg(agg_type)
     return res
 
-def create_month_dim(logbook, mant_event, flights):
-    # get min/max logbook reporting date
+def create_temporal_dims(temp_dim_name, months_dim_name, logbook, mant_event, flights):
+    logging.info("Creating Temporal and Months dimensions...")
+
+    # get min/max logbook reporting dates
     min_logbook = get_date_agg(logbook, 'reportingdate', 'min')
     max_logbook = get_date_agg(logbook, 'reportingdate', 'max')
 
-    # get min/max maintenance date
+    # get min/max maintenance dates
     mant_event['endtime'] = mant_event['starttime'] + mant_event['duration']
     min_maint = get_date_agg(mant_event, 'starttime', 'min')
     max_maint = get_date_agg(mant_event, 'endtime', 'max')
 
-    # get min/max flight scheduled date
+    # get min/max flight dates (scheduled and actual)
     min_scheduled_flight = get_date_agg(flights, 'scheduleddeparture', 'min')
     max_scheduled_flight = get_date_agg(flights, 'scheduledarrival', 'max')
-
-    # get min/max flight actual date
     min_actual_flight = get_date_agg(flights, 'actualdeparture', 'min')
     max_actual_flight = get_date_agg(flights, 'actualarrival', 'max')
 
     # define global min and max date
-    global_min_date = pd.Series([min_logbook, min_maint, min_scheduled_flight, min_actual_flight]).min()
-    global_max_date = pd.Series([max_logbook, max_maint, max_scheduled_flight, max_actual_flight]).max()
+    global_min_date = pd.to_datetime(pd.Series([min_logbook, min_maint, min_scheduled_flight, min_actual_flight]).min()).ceil('D')
+    global_max_date = pd.to_datetime(pd.Series([max_logbook, max_maint, max_scheduled_flight, max_actual_flight]).max()).ceil('D')
+    logging.info(f'Temporal dimensions - Minimum date: {global_min_date}.')
+    logging.info(f'Temporal dimensions - Maximum date: {global_max_date}.')
 
-    # build range of months
-    month_range = pd.period_range(
+    # create day range
+    day_range = pd.date_range(
         start=global_min_date,
         end=global_max_date,
-        freq='M'
+        freq='D'
     )
 
-    # create month dimension
-    month_dim = pd.DataFrame({'ID': month_range})
-    month_dim['y'] = month_dim['ID'].dt.year
+    # create TemporalDimension (daily granularity)
+    temporal_dim = pd.DataFrame({'ID': day_range})
+    temporal_dim['monthID'] = temporal_dim['ID'].dt.strftime('%Y-%m')
 
-    return month_dim
+    # create Months dimension (monthly granularity)
+    months_dim = temporal_dim[['monthID']].drop_duplicates().copy()
+    months_dim = months_dim.rename({'monthID': 'ID'}, axis=1)
+    months_dim['y'] = pd.to_datetime(months_dim['ID']).dt.year
 
-if __name__ == '__main__':
-    flights = pd.read_parquet(f'{RAW_STAGING_DIR}/flights.parquet')
-    logbook = pd.read_parquet(f'{RAW_STAGING_DIR}/technicallogbookorders.parquet')
-    mant_event = pd.read_parquet(f'{RAW_STAGING_DIR}/maintenanceevents.parquet')
-    aircraft_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/aircraft_lookup.parquet')
-    personnel_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/personnel_lookup.parquet')
+    # load dimensions df into staging area
+    temp_output_path = f'{TRANSFORMED_STAGING_DIR}/{temp_dim_name}.parquet'
+    months_output_path = f'{TRANSFORMED_STAGING_DIR}/{months_dim_name}.parquet'
+    temporal_dim.to_parquet(temp_output_path, index=False)
+    months_dim.to_parquet(months_output_path, index=False)
 
-    aircraft_dim = create_aircraft_dim(flights, logbook, aircraft_lookup)
-    people_dim = create_people_dim(logbook, personnel_lookup)
-    month_dim = create_month_dim(logbook, mant_event, flights)
+    logging.info("Temporal and Months dimensions successfully created and staged.")

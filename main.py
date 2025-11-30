@@ -6,7 +6,7 @@ from src.settings import LOG_PATH, CONFIG_PATH, RAW_STAGING_DIR
 from src.db_connection import DBConnector
 from src.extract import extract_table, extract_csv
 from src.queries import AIMS_EXTRACTION, AMOS_EXTRACTION, CSV_EXTRACTION
-from src.transform_dims import create_aircraft_dim, create_people_dim, create_month_dim
+from src.transform_dims import create_aircraft_dim, create_people_dim, create_temporal_dims
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
@@ -19,38 +19,31 @@ logging.basicConfig(
 )
 
 def run_extraction(dbc):
-    # AIMS connection
-    logging.info("Connecting with AIMS database...")
-    aims_connection = dbc.get_connection("aims")
-    logging.info("Connection with AIMS database established.")
+    logging.info("Starting extraction process...")
 
-    # AMOS connection
-    logging.info("Connecting with AMOS database...")
+    # AIMS and AMOS connection
+    aims_connection = dbc.get_connection("aims")
     amos_connection = dbc.get_connection("amos")
-    logging.info("Connection with AMOS database established.")
 
     # extract data from AIMS database: iterate over each table query
-    logging.info("Extracting data from AIMS database...")
     for table_name, query in AIMS_EXTRACTION.items():
         extract_table(aims_connection, table_name, query)
 
     # extract data from AMOS database: iterate over each table query
-    logging.info("Extracting data from AMOS database...")
     for table_name, query in AMOS_EXTRACTION.items():
         extract_table(amos_connection, table_name, query)
 
     # extract data from CSV files
-    logging.info("Extracting data from CSV files...")
     for table_name, config in CSV_EXTRACTION.items():
         extract_csv(table_name, config)
     
     logging.info("Data successfully extracted.")
 
 def run_validation():
-    logging.info("Validating data...")
+    pass
 
 def run_transformation():
-    logging.info("Starting transformation of data...")
+    logging.info("Starting data transformation...")
 
     # read cleaned data (!! CHANGE RAW DIR BY CLEANED DIR !!)
     flights = pd.read_parquet(f'{RAW_STAGING_DIR}/flights.parquet')
@@ -59,20 +52,15 @@ def run_transformation():
     aircraft_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/aircraft_lookup.parquet')
     personnel_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/personnel_lookup.parquet')
 
-    logging.info('Creating aircraft dimension...')
-    create_aircraft_dim(flights, logbook, aircraft_lookup)
-    logging.info('Aircraft dimension successfully created.')
+    # create dimensions
+    create_aircraft_dim('AircraftDimension', flights, logbook, aircraft_lookup)
+    create_people_dim('PeopleDimension', logbook, personnel_lookup)
+    create_temporal_dims('TemporalDimension', 'Months', logbook, mant_event, flights)
 
-    logging.info('Creating people dimension...')
-    create_people_dim(logbook, personnel_lookup)
-    logging.info('People dimension successfully created.')
-
-    logging.info('Creating Months dimension...')
-    create_month_dim(logbook, mant_event, flights)
-    logging.info('Months dimension successfully created.')
+    logging.info("Data transformed and dimensions created successfully.")
 
 def run_loading(dbc):
-    logging.info("Loading data...")
+    pass
 
 def main():
     # setup arguments
@@ -93,7 +81,6 @@ def main():
     # initialization of DB connections
     dbc = None
     if run_all or args.extract or args.load:
-        logging.info("Initializating DB connections...")
         dbc = DBConnector(config_path=CONFIG_PATH)
 
     if run_all or args.extract:

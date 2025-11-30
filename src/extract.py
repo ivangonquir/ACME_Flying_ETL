@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 
 def extract_table(db_connection, table_name, query):
-    
+    logging.info(f"Extracting {table_name}...")
     output_path = f"{RAW_STAGING_DIR}/{table_name}.parquet"
 
     try:
@@ -23,14 +23,14 @@ def extract_table(db_connection, table_name, query):
         
         # store table into parquet file
         table.to_parquet(output_path, index=False)
-        logging.info(f"Table {table_name} successfully extracted.")
+        logging.info(f"Table {table_name} successfully extracted and staged.")
     
     except Exception as e:
         logging.error(f"Error extracting {table_name}: {e}")
         raise e
     
 def extract_csv(table_name, config):
-    
+    logging.info(f"Extracting {table_name}...")
     output_path = f"{RAW_STAGING_DIR}/{table_name}.parquet"
 
     try:
@@ -42,7 +42,7 @@ def extract_csv(table_name, config):
         )
 
         df.to_parquet(output_path, index=False)
-        logging.info(f"Table {table_name} successfully extracted.")
+        logging.info(f"Table {table_name} successfully extracted and staged.")
     
     except Exception as e:
         logging.error(f"Error extracting {table_name}: {e}")

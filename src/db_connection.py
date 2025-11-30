@@ -1,9 +1,22 @@
 import yaml
 import os
+import logging
+import sys
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from src.settings import LOG_PATH
 
 load_dotenv()
+
+# setup logging (write on both log file and terminal)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_PATH), 
+        logging.StreamHandler(sys.stdout)    
+    ]
+)
 
 class DBConnector:
     """
@@ -12,6 +25,8 @@ class DBConnector:
     - Target database (DW).
     """
     def __init__(self, config_path):
+        logging.info("Initialized DB connector.")
+
         # open file
         with open(config_path, 'r') as file:
             raw_content = file.read()
@@ -30,6 +45,8 @@ class DBConnector:
         Args:
             db_name (str): 'aims', 'amos', or 'dw'
         """
+        logging.info(f"Connecting with {db_name} database...")
+
         if db_name in self.engines:
             return self.engines[db_name]
 
@@ -54,4 +71,5 @@ class DBConnector:
         engine = create_engine(url, echo=False)
         self.engines[db_name] = engine
         
+        logging.info(f"Connection with {db_name} database established.")
         return engine 

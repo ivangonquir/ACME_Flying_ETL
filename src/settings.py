@@ -18,3 +18,6 @@ RAW_STAGING_DIR = f"{PROJECT_ROOT}/data/raw_staging"
 
 # path to raw cleaned data
 CLEAN_STAGING_DIR = f"{PROJECT_ROOT}/data/clean_staging"
+
+# path to transformed data (dimensions and fact tables populated)
+TRANSFORMED_STAGING_DIR = f"{PROJECT_ROOT}/data/transform_staging"
