@@ -9,11 +9,9 @@ AIMS_EXTRACTION = {
             arrivalairport,
             actualdeparture, 
             actualarrival, 
-            cancelled,
-            delaycode
+            cancelled
         FROM flights
     """,
-    #"maintenance": """ """, # not used for dw
     "slots": """ 
         SELECT 
             aircraftregistration, 
@@ -24,50 +22,21 @@ AIMS_EXTRACTION = {
 }
 
 AMOS_EXTRACTION = {
-    "attachments": """ 
-        SELECT file::text AS file
-        FROM attachments
-    """,
-    "forecastedorders": """ 
-        SELECT workorderid
-        FROM forecastedorders
-    """,
     "maintenanceevents": """
         SELECT 
             maintenanceid, 
             aircraftregistration, 
-            airport,
-            starttime, 
-            duration, 
             kind
         FROM maintenanceevents
-    """,
-    "operationinterruption": """ 
-        SELECT 
-            maintenanceid, 
-            flightid, 
-            departure, 
-            delaycode
-        FROM operationinterruption
     """,
     "technicallogbookorders": """ 
         SELECT 
             workorderid, 
-            aircraftregistration, 
-            executiondate,            
+            aircraftregistration,          
             reporteurclass,
             reporteurid,
-            mel,
             reportingdate
         FROM technicallogbookorders
-    """,
-    "workorders": """ 
-        SELECT workorderid
-        FROM workorders
-    """,
-    "workpackages": """ 
-        SELECT workpackageid
-        FROM workpackages
     """
 }
 
