@@ -1,9 +1,12 @@
 import logging
 import sys
-from src.settings import LOG_PATH, CONFIG_PATH
+import argparse
+import pandas as pd
+from src.settings import LOG_PATH, CONFIG_PATH, RAW_STAGING_DIR
 from src.db_connection import DBConnector
-from src.extractors import extract_table, extract_csv
+from src.extract import extract_table, extract_csv
 from src.queries import AIMS_EXTRACTION, AMOS_EXTRACTION, CSV_EXTRACTION
+from src.transform_dims import create_aircraft_dim, create_people_dim, create_month_dim
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
@@ -15,14 +18,14 @@ logging.basicConfig(
     ]
 )
 
-def main():
-    logging.info("ETL process started")
-
-    # initialization of DB connections
-    logging.info("Initializating DB connections...")
-    dbc = DBConnector(config_path=CONFIG_PATH)
+def run_extraction(dbc):
+    # AIMS connection
+    logging.info("Connecting with AIMS database...")
     aims_connection = dbc.get_connection("aims")
     logging.info("Connection with AIMS database established.")
+
+    # AMOS connection
+    logging.info("Connecting with AMOS database...")
     amos_connection = dbc.get_connection("amos")
     logging.info("Connection with AMOS database established.")
 
@@ -40,10 +43,73 @@ def main():
     logging.info("Extracting data from CSV files...")
     for table_name, config in CSV_EXTRACTION.items():
         extract_csv(table_name, config)
+    
+    logging.info("Data successfully extracted.")
 
-    # data validation
+def run_validation():
     logging.info("Validating data...")
 
+def run_transformation():
+    logging.info("Starting transformation of data...")
+
+    # read cleaned data (!! CHANGE RAW DIR BY CLEANED DIR !!)
+    flights = pd.read_parquet(f'{RAW_STAGING_DIR}/flights.parquet')
+    logbook = pd.read_parquet(f'{RAW_STAGING_DIR}/technicallogbookorders.parquet')
+    mant_event = pd.read_parquet(f'{RAW_STAGING_DIR}/maintenanceevents.parquet')
+    aircraft_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/aircraft_lookup.parquet')
+    personnel_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/personnel_lookup.parquet')
+
+    logging.info('Creating aircraft dimension...')
+    create_aircraft_dim(flights, logbook, aircraft_lookup)
+    logging.info('Aircraft dimension successfully created.')
+
+    logging.info('Creating people dimension...')
+    create_people_dim(logbook, personnel_lookup)
+    logging.info('People dimension successfully created.')
+
+    logging.info('Creating Months dimension...')
+    create_month_dim(logbook, mant_event, flights)
+    logging.info('Months dimension successfully created.')
+
+def run_loading(dbc):
+    logging.info("Loading data...")
+
+def main():
+    # setup arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--extract', action='store_true', help='Run extraction')
+    parser.add_argument('--validate', action='store_true', help='Run validation')
+    parser.add_argument('--transform', action='store_true', help='Run transformation')
+    parser.add_argument('--load', action='store_true', help='Run loading')
+    args = parser.parse_args()
+
+    if not any([args.extract, args.validate, args.transform, args.load]):
+        run_all = True
+    else:
+        run_all = False
+
+    logging.info("ETL process started")
+
+    # initialization of DB connections
+    dbc = None
+    if run_all or args.extract or args.load:
+        logging.info("Initializating DB connections...")
+        dbc = DBConnector(config_path=CONFIG_PATH)
+
+    if run_all or args.extract:
+        run_extraction(dbc)
+    
+    if run_all or args.validate:
+        run_validation()
+    
+    if run_all or args.transform:
+        run_transformation()
+    
+    if run_all or args.load:
+        run_loading(dbc)
+    
+    logging.info("ETL process finished")
+    
 if __name__=='__main__':
     main()
     

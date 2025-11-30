@@ -26,6 +26,8 @@ AMOS_EXTRACTION = {
         SELECT 
             maintenanceid, 
             aircraftregistration, 
+            starttime,
+            duration,
             kind
         FROM maintenanceevents
     """,
