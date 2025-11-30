@@ -23,7 +23,8 @@ def create_aircraft_dim(flights, logbook, aircraft_lookup):
     # union: combine IDs and remove duplicates
     all_aircraft = pd.concat([aims_aircraft, amos_aircraft]).drop_duplicates().reset_index(drop=True)
 
-    # join with aircraft lookup to obtain model and manufacturer
+    # left join (all aircrafts from flights and logbook with aircraft lookup)
+    # keep aircrafts even if they do not appear in the lookup
     dim_aircraft = pd.merge(
         all_aircraft,
         aircraft_lookup,
@@ -32,24 +33,68 @@ def create_aircraft_dim(flights, logbook, aircraft_lookup):
         how='left'
     )
 
-    # logging of aircrafts that were not found in aircraft lookup
+    # logging of aircrafts not found in aircraft lookup
     no_matches_ids = dim_aircraft[dim_aircraft.manufacturer.isna()].ID.values
-    for id in no_matches_ids:
-        logging.warning(f'Warning: Aircraft {id} was not found in aircraft lookup')
+    if len(no_matches_ids) > 0:
+        logging.warning(f'Warning: {len(no_matches_ids)} aircrafts not found in lookup. IDs: {no_matches_ids}')
 
-    # set model and manufacturer of aircrafts that were not found in aircraft lookup as unknown
-    dim_aircraft.manufacturer.fillna('Unknown')
-    dim_aircraft.aircraft_model.fillna('Unknown')
+    # set model and manufacturer of aircrafts not found in lookup as unknown
+    dim_aircraft.manufacturer.fillna('UNK')
+    dim_aircraft.aircraft_model.fillna('UNK')
+
+    # keep relevant columns and rename them 
+    dim_aircraft = dim_aircraft[['ID', 'aircraft_model', 'manufacturer']].rename({'aircraft_model': 'model'}, axis=1)
 
     logging.info("Aircraft dimension sucessfully created.")
-    return dim_aircraft[['ID', 'aircraft_model', 'manufacturer']].rename({'aircraft_model': 'model'}, axis=1)
+    return dim_aircraft
+
+def create_people_dim(logbook, personnel_lookup):
+    logging.info('Starting people dimension creation...')
+
+    # get unique reporteurs from logbook table
+    logbook_people = logbook[['reporteurclass', 'reporteurid']].drop_duplicates()
+
+    # left join (technical logbook with personnel lookup): 
+    # keep reporteurs even if they do not appear in the lookup
+    dim_people = pd.merge(
+        logbook_people, 
+        personnel_lookup,
+        on='reporteurid',
+        how='left'
+    )
+
+    # logging of reporteurs not found in personnel lookup
+    no_matches_ids = dim_people[dim_people.airport.isna()].reporteurid.values
+    if len(no_matches_ids) > 0:
+        logging.warning(f'Warning: {len(no_matches_ids)} reporteurs not found in lookup. IDs: {no_matches_ids}')
+
+    # set airports of reporteurs not found in lookup as unknown
+    dim_people['airport'] = dim_people['airport'].fillna('UNK')
+
+    # transform reporteur class format
+    dim_people['reporteurclass'] = dim_people['reporteurclass'].map({
+        'MAREP': 'M',
+        'PIREP': 'P'
+    })
+
+    # reorder and rename columns
+    dim_people = dim_people[['reporteurid', 'airport', 'reporteurclass']].rename(columns={
+        'reporteurid': 'ID',
+        'reporteurclass': 'role'
+    })
+
+    logging.info("People dimension sucessfully created.")
+    return dim_people
 
 if __name__ == '__main__':
     flights = pd.read_parquet(f'{RAW_STAGING_DIR}/flights.parquet')
     logbook = pd.read_parquet(f'{RAW_STAGING_DIR}/technicallogbookorders.parquet')
     aircraft_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/aircraft_lookup.parquet')
+    personnel_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/personnel_lookup.parquet')
 
     aircraft_dim = create_aircraft_dim(flights, logbook, aircraft_lookup)
     print(aircraft_dim.head())
 
+    people_dim = create_people_dim(logbook, personnel_lookup)
+    print(people_dim.head())
 
