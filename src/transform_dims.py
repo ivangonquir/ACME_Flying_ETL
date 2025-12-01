@@ -120,7 +120,7 @@ def create_temporal_dims(temp_dim_name, months_dim_name, logbook, mant_event, fl
     max_actual_flight = get_date_agg(flights, 'actualarrival', 'max')
 
     # define global min and max date
-    global_min_date = pd.to_datetime(pd.Series([min_logbook, min_maint, min_scheduled_flight, min_actual_flight]).min()).ceil('D')
+    global_min_date = pd.to_datetime(pd.Series([min_logbook, min_maint, min_scheduled_flight, min_actual_flight]).min()).floor('D')
     global_max_date = pd.to_datetime(pd.Series([max_logbook, max_maint, max_scheduled_flight, max_actual_flight]).max()).ceil('D')
     logging.info(f'Temporal dimensions - Minimum date: {global_min_date}.')
     logging.info(f'Temporal dimensions - Maximum date: {global_max_date}.')
