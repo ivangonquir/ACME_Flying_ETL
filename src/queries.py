@@ -9,7 +9,8 @@ AIMS_EXTRACTION = {
             arrivalairport,
             actualdeparture, 
             actualarrival, 
-            cancelled
+            cancelled,
+            delaycode
         FROM flights
     """,
     "slots": """ 

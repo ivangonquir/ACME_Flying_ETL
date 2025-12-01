@@ -43,7 +43,7 @@ def run_validation():
     pass
 
 def run_transformation():
-    logging.info("Starting data transformation...")
+    logging.info("Starting data transformation - Dimensions creation...")
 
     # read cleaned data (!! CHANGE RAW DIR BY CLEANED DIR !!)
     flights = pd.read_parquet(f'{RAW_STAGING_DIR}/flights.parquet')
@@ -57,7 +57,9 @@ def run_transformation():
     create_people_dim('PeopleDimension', logbook, personnel_lookup)
     create_temporal_dims('TemporalDimension', 'Months', logbook, mant_event, flights)
 
-    logging.info("Data transformed and dimensions created successfully.")
+    logging.info("Fact tables creation...")
+
+    logging.info("Data transformed and dimensions/fact tables created successfully.")
 
 def run_loading(dbc):
     pass
