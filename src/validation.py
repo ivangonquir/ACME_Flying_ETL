@@ -1,5 +1,256 @@
 import pandas as pd
+import logging
+import re
 
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+def validate_identifiers(work_packages, work_orders, maintenance_events, attachments, flights):
+    """
+    Validates BR1, BR2, BR3, BR4, BR11 (Uniqueness of Primary Keys)
+    """
+    logging.info("--- Validating Identifiers (BR1-BR4, BR11) ---")
+    
+    checks = [
+        (work_packages, 'workPackageID', 'BR1'),
+        (work_orders, 'workOrderID', 'BR2'),
+        (maintenance_events, 'maintenanceID', 'BR3'),
+        (attachments, 'file', 'BR4'),
+        (flights, 'flightID', 'BR11')
+    ]
+
+    for df, col, rule in checks:
+        if col in df.columns:
+            if not df[col].is_unique:
+                duplicates = df[col].duplicated().sum()
+                logging.error(f"[{rule}] VIOLATION: {col} is not unique. {duplicates} duplicates found.")
+            else:
+                logging.info(f"[{rule}] Passed: {col} is unique.")
+        else:
+            logging.warning(f"[{rule}] Column {col} not found in dataframe.")
+
+def validate_domains_and_nulls(logbook, maintenance_events):
+    """
+    Validates BR5, BR6, BR7 (Allowed values and Non-Nulls)
+    """
+    logging.info("--- Validating Domains & Nulls (BR5-BR7) ---")
+
+    # BR5: ReportKind values
+    if 'reporteurclass' in logbook.columns:
+        valid_kinds = ['PIREP', 'MAREP']
+        invalid_mask = ~logbook['reporteurclass'].isin(valid_kinds)
+        if invalid_mask.any():
+            logging.error(f"[BR5] VIOLATION: Found invalid ReportKind values: {logbook[invalid_mask]['reporteurclass'].unique()}")
+        else:
+            logging.info("[BR5] Passed: ReportKind values are valid.")
+
+    # BR6: MELCategory (Assuming this column exists in maintenance_events or logbook)
+    # Adjust 'MEL_category' to the actual column name in your DF
+    mel_col = 'MEL_category' 
+    if mel_col in maintenance_events.columns:
+        valid_mel = ['A', 'B', 'C', 'D']
+        # Filter out NaNs if they are allowed, otherwise remove .dropna()
+        invalid_mel = maintenance_events[~maintenance_events[mel_col].isin(valid_mel) & maintenance_events[mel_col].notna()]
+        if not invalid_mel.empty:
+             logging.error(f"[BR6] VIOLATION: Invalid MEL Categories found: {invalid_mel[mel_col].unique()}")
+        else:
+            logging.info("[BR6] Passed: MEL Categories are valid.")
+
+    # BR7: Airport in MaintenanceEvents must have a value
+    if 'airport' in maintenance_events.columns:
+        missing_airport = maintenance_events['airport'].isna().sum()
+        if missing_airport > 0:
+            logging.error(f"[BR7] VIOLATION: {missing_airport} MaintenanceEvents are missing 'airport'.")
+        else:
+            logging.info("[BR7] Passed: All MaintenanceEvents have airports.")
+
+def validate_maintenance_logic(op_interruption, maintenance_events, flights):
+    """
+    Validates BR8, BR9, BR10
+    """
+    logging.info("--- Validating Maintenance Logic (BR8-BR10) ---")
+
+    # BR8: OpInterruption departure matches flightID date
+    # flightID structure: Date(6)-Origin(3)... e.g., 230101-LHR...
+    if 'flightID' in op_interruption.columns and 'departure' in op_interruption.columns:
+        # Extract date string from flightID (first 6 chars)
+        op_interruption['flightID_date_str'] = op_interruption['flightID'].astype(str).str[:6]
+        # Convert to datetime (assuming format YYMMDD)
+        op_interruption['flightID_date'] = pd.to_datetime(op_interruption['flightID_date_str'], format='%y%m%d', errors='coerce').dt.date
+        op_interruption['dep_date'] = pd.to_datetime(op_interruption['departure']).dt.date
+
+        mismatches = op_interruption[op_interruption['flightID_date'] != op_interruption['dep_date']]
+        if not mismatches.empty:
+             logging.error(f"[BR8] VIOLATION: {len(mismatches)} records where departure date does not match flightID date.")
+        else:
+            logging.info("[BR8] Passed: OpInterruption dates match flightID.")
+
+    # BR9: Flight in OpInterruption must exist in Flights and be Delayed
+    if 'flightID' in op_interruption.columns:
+        # Merge to check existence and status
+        merged = pd.merge(op_interruption[['flightID']], 
+                          flights[['flightID', 'delayCode']], 
+                          on='flightID', 
+                          how='left', 
+                          indicator=True)
+        
+        # Check 1: Must exist in Flights
+        missing_flights = merged[merged['_merge'] == 'left_only']
+        if not missing_flights.empty:
+            logging.error(f"[BR9] VIOLATION: {len(missing_flights)} OpInterruptions refer to non-existent flights.")
+        
+        # Check 2: Must have delayCode
+        # Look at records that exist (both) but have null delayCode
+        existing = merged[merged['_merge'] == 'both']
+        not_delayed = existing[existing['delayCode'].isna()]
+        if not_delayed.empty:
+            logging.info("[BR9] Passed: All interrupted flights exist and are delayed.")
+        else:
+            logging.error(f"[BR9] VIOLATION: {len(not_delayed)} interrupted flights exist but are NOT marked as delayed.")
+
+    # BR10: Maintenance Duration Logic
+    # Requires 'kind' and 'duration' columns. Duration assumed to be Timedelta.
+    if 'kind' in maintenance_events.columns and 'duration' in maintenance_events.columns:
+        # Define logic (Simplified for demonstration)
+        # Delay -> Minutes (e.g., < 2 hours)
+        # Maintenance -> Hours to max 1 day
+        # Revision -> Days to 1 month
+        
+        # Example check for "Maintenance" type
+        maint_evs = maintenance_events[maintenance_events['kind'] == 'Maintenance']
+        long_maint = maint_evs[maint_evs['duration'] > pd.Timedelta(days=1)]
+        
+        if not long_maint.empty:
+            logging.warning(f"[BR10] WARNING: {len(long_maint)} 'Maintenance' events lasted longer than 1 day.")
+        else:
+            logging.info("[BR10] Passed (partial): Maintenance duration looks reasonable.")
+
+def validate_flight_logic(flights):
+    """
+    Validates BR12, BR13, BR14, BR16, BR17, BR18
+    """
+    logging.info("--- Validating Flight Logic (BR12-BR18) ---")
+    
+    # BR12: flightID format validation
+    # Regex: 6 digits (date), 3 chars (orig), 3 chars (dest), 4 digits (num), 6 chars (reg)
+    # Note: Regex adjusted based on common IATA/ICAO lengths provided in description
+    # Pattern: Date(6)-Origin(3)-Dest(3)-FlightNum(4)-Reg(6)
+    pattern = re.compile(r'^\d{6}-[A-Z]{3}-[A-Z]{3}-\d{4}-[A-Z0-9]{6}$')
+    
+    invalid_ids = flights[~flights['flightID'].astype(str).str.match(pattern)]
+    if not invalid_ids.empty:
+        logging.error(f"[BR12] VIOLATION: {len(invalid_ids)} flightIDs do not match the required format.")
+    else:
+        logging.info("[BR12] Passed: flightID format valid.")
+
+    # BR13 & BR18: Arrival > Departure (Scheduled and Actual)
+    # Scheduled
+    if 'scheduledarrival' in flights.columns and 'scheduleddeparture' in flights.columns:
+        bad_sched = flights[flights['scheduledarrival'] <= flights['scheduleddeparture']]
+        if not bad_sched.empty:
+            logging.error(f"[BR13] VIOLATION: {len(bad_sched)} flights arrive before they depart (Scheduled).")
+        else:
+            logging.info("[BR13] Passed: Scheduled Arrival > Departure.")
+            
+    # Actual
+    if 'actualarrival' in flights.columns and 'actualdeparture' in flights.columns:
+        # Filter out NaNs (cancelled flights might not have actuals)
+        actuals = flights.dropna(subset=['actualarrival', 'actualdeparture'])
+        bad_act = actuals[actuals['actualarrival'] <= actuals['actualdeparture']]
+        if not bad_act.empty:
+            logging.error(f"[BR18] VIOLATION: {len(bad_act)} flights arrive before they depart (Actual).")
+        else:
+            logging.info("[BR18] Passed: Actual Arrival > Departure.")
+
+    # BR14: Flight duration < 24 hours
+    # Assuming duration is calculated or diff between arr and dep
+    if 'scheduledarrival' in flights.columns:
+        flights['calc_duration'] = flights['scheduledarrival'] - flights['scheduleddeparture']
+        long_flights = flights[flights['calc_duration'] > pd.Timedelta(hours=24)]
+        if not long_flights.empty:
+             logging.error(f"[BR14] VIOLATION: {len(long_flights)} flights differ by more than 24 hours.")
+        else:
+             logging.info("[BR14] Passed: No flights exceed 24 hours.")
+
+    # BR16: No overlapping slots for same aircraft
+    # We sort by aircraft and departure time
+    if 'aircraftregistration' in flights.columns:
+        df_sorted = flights.sort_values(by=['aircraftregistration', 'scheduleddeparture'])
+        
+        # Shift creates a new column with the *previous* row's arrival time
+        df_sorted['prev_arrival'] = df_sorted.groupby('aircraftregistration')['scheduledarrival'].shift(1)
+        
+        # Overlap exists if Current Departure < Previous Arrival
+        overlaps = df_sorted[df_sorted['scheduleddeparture'] < df_sorted['prev_arrival']]
+        
+        if not overlaps.empty:
+            logging.error(f"[BR16] VIOLATION: {len(overlaps)} overlapping flight slots found for the same aircraft.")
+            # Optional: print sample
+            # print(overlaps[['flightID', 'aircraftregistration', 'scheduleddeparture', 'prev_arrival']].head())
+        else:
+            logging.info("[BR16] Passed: No overlapping slots.")
+
+    # BR17: Origin/Dest match flightID
+    # flightID structure: Date-Origin-Dest-...
+    if 'origin' in flights.columns and 'destination' in flights.columns:
+        # Extract from ID
+        # Split string by '-'
+        # ID parts: [0]Date, [1]Origin, [2]Dest, ...
+        id_parts = flights['flightID'].str.split('-', expand=True)
+        if id_parts.shape[1] >= 3:
+            flights['id_origin'] = id_parts[1]
+            flights['id_dest'] = id_parts[2]
+            
+            # Check Origin
+            bad_orig = flights[flights['origin'] != flights['id_origin']]
+            # Check Destination (Allowing for diversion? Rule says "unless diverted". 
+            # If you have a 'diverted' flag, add: & (flights['diverted'] == False))
+            bad_dest = flights[flights['destination'] != flights['id_dest']]
+            
+            if not bad_orig.empty or not bad_dest.empty:
+                logging.warning(f"[BR17] WARNING: {len(bad_orig) + len(bad_dest)} flights have airports mismatching their ID (Check for diversions).")
+            else:
+                logging.info("[BR17] Passed: Airports match flightID.")
+
+# --- Wrapper Function to Run All ---
+def run_all_validations(dfs_dict):
+    """
+    Expects a dictionary of dataframes:
+    {
+        'flights': df,
+        'logbook': df,
+        'maintenance': df,
+        'op_interruption': df,
+        'work_pkg': df,
+        ...
+    }
+    """
+    logging.info("STARTING DATA QUALITY VALIDATION")
+    
+    validate_identifiers(
+        work_packages=dfs_dict.get('work_pkg', pd.DataFrame()),
+        work_orders=dfs_dict.get('work_orders', pd.DataFrame()),
+        maintenance_events=dfs_dict.get('maintenance', pd.DataFrame()),
+        attachments=dfs_dict.get('attachments', pd.DataFrame()),
+        flights=dfs_dict.get('flights', pd.DataFrame())
+    )
+    
+    validate_domains_and_nulls(
+        logbook=dfs_dict.get('logbook', pd.DataFrame()),
+        maintenance_events=dfs_dict.get('maintenance', pd.DataFrame())
+    )
+    
+    validate_maintenance_logic(
+        op_interruption=dfs_dict.get('op_interruption', pd.DataFrame()),
+        maintenance_events=dfs_dict.get('maintenance', pd.DataFrame()),
+        flights=dfs_dict.get('flights', pd.DataFrame())
+    )
+    
+    validate_flight_logic(
+        flights=dfs_dict.get('flights', pd.DataFrame())
+    )
+    
+    logging.info("VALIDATION COMPLETE")
 if __name__ == '__main__':
     me = pd.read_parquet('../data/raw_staging/maintenanceevents.parquet')
     print(me.kind.unique())
