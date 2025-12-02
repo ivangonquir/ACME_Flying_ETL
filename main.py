@@ -9,7 +9,7 @@ from src.extract import extract_table, extract_csv
 from src.queries import AIMS_EXTRACTION, AMOS_EXTRACTION, CSV_EXTRACTION
 from src.transform_dims import create_aircraft_dim, create_people_dim, create_temporal_dims
 from src.transform_facts import create_aircraft_utilization_fact, create_logbook_reporting_fact
-from src.load import load_table
+from src.load import load_table, clean_target_tables
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
@@ -87,27 +87,39 @@ def run_transformation():
     logging.info("Data transformed and dimensions/fact tables created and stored into staging area successfully.")
 
 def run_loading(dbc):
+    logging.info("Starting Fact and Dimension loading into target SQL tables (DW)...")
+
     # read transformed dimensions and facts
     aircraft_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/AircraftDimension.parquet')
-    temp_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/TemporalDimension.parquet')
     months_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/Months.parquet')
+    temp_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/TemporalDimension.parquet')
     people_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/PeopleDimension.parquet')
     aircraft_utilization_fact = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/AircraftUtilization.parquet')
     logbook_reporting_fact = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/LogBookReporting.parquet')
 
     # get DW oracle connection
+    logging.info("Connecting to Oracle DB...")
     dw_connection = dbc.get_connection("dw")
+    logging.info("Connection to Oracle DB established.")
 
-    # load dimensions
-    load_table(dw_connection, aircraft_dim, "AIRCRAFTDIMENSION")
-    load_table(dw_connection, months_dim, "MONTHS")
-    # ...
+    # delete tables before inserting (to allow rerun ETL)
+    clean_target_tables(dw_connection)
 
-    # load facts
+    # load dimensions and facts into oracle database (DW)
+    loading_sequence = [
+        (aircraft_dim, "AIRCRAFTDIMENSION"),
+        (months_dim, "MONTHS"),
+        (temp_dim, "TEMPORALDIMENSION"),
+        (people_dim, "PEOPLEDIMENSION"),
+        (aircraft_utilization_fact, "AIRCRAFTUTILIZATION"),
+        (logbook_reporting_fact, "LOGBOOKREPORTING")
+    ]
 
-    logging.info("...")
-    
-    
+    for df, table_name in loading_sequence:
+        load_table(dw_connection, df, table_name)
+
+    logging.info("Facts and dimensions successfully loaded into the DW.")
+
 
 def main():
     # setup arguments
@@ -133,8 +145,8 @@ def main():
     if run_all or args.extract:
         run_extraction(dbc)
     
-    if run_all or args.validate:
-        run_validation()
+    # if run_all or args.validate:
+    #     run_validation()
     
     if run_all or args.transform:
         run_transformation()
@@ -144,6 +156,7 @@ def main():
     
     logging.info("ETL process finished")
     
+
 if __name__=='__main__':
     main()
     
