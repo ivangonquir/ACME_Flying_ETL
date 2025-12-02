@@ -50,6 +50,7 @@ def create_aircraft_dim(dim_name, flights, logbook, aircraft_lookup):
     dim_aircraft.to_parquet(output_path, index=False)
 
     logging.info("Aircraft dimension successfully created and staged.")
+    return dim_aircraft
 
 def create_people_dim(dim_name, logbook, personnel_lookup):
     logging.info("Creating People dimension...")
@@ -91,6 +92,7 @@ def create_people_dim(dim_name, logbook, personnel_lookup):
     dim_people.to_parquet(output_path, index=False)
 
     logging.info("People dimension successfully created and staged.")
+    return dim_people
 
 def get_date_agg(df, column_name, agg_type):
     """
@@ -148,3 +150,4 @@ def create_temporal_dims(temp_dim_name, months_dim_name, logbook, mant_event, fl
     months_dim.to_parquet(months_output_path, index=False)
 
     logging.info("Temporal and Months dimensions successfully created and staged.")
+    return temporal_dim, months_dim

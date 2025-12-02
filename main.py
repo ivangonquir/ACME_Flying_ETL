@@ -7,6 +7,7 @@ from src.db_connection import DBConnector
 from src.extract import extract_table, extract_csv
 from src.queries import AIMS_EXTRACTION, AMOS_EXTRACTION, CSV_EXTRACTION
 from src.transform_dims import create_aircraft_dim, create_people_dim, create_temporal_dims
+from src.transform_facts import create_aircraft_utilization_fact, create_logbook_reporting_fact
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
@@ -37,7 +38,7 @@ def run_extraction(dbc):
     for table_name, config in CSV_EXTRACTION.items():
         extract_csv(table_name, config)
     
-    logging.info("Data successfully extracted.")
+    logging.info("Data successfully extracted and stored into staging area.")
 
 def run_validation():
     pass
@@ -52,14 +53,18 @@ def run_transformation():
     aircraft_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/aircraft_lookup.parquet')
     personnel_lookup = pd.read_parquet(f'{RAW_STAGING_DIR}/personnel_lookup.parquet')
 
-    # create dimensions
-    create_aircraft_dim('AircraftDimension', flights, logbook, aircraft_lookup)
-    create_people_dim('PeopleDimension', logbook, personnel_lookup)
-    create_temporal_dims('TemporalDimension', 'Months', logbook, mant_event, flights)
+    # create and store dimensions
+    aircraft_dim = create_aircraft_dim('AircraftDimension', flights, logbook, aircraft_lookup)
+    people_dim = create_people_dim('PeopleDimension', logbook, personnel_lookup)
+    temp_dim, months_dim = create_temporal_dims('TemporalDimension', 'Months', logbook, mant_event, flights)
 
-    logging.info("Fact tables creation...")
+    logging.info("Data transformation - Fact tables creation...")
 
-    logging.info("Data transformed and dimensions/fact tables created successfully.")
+    # create and store fact tables
+    create_aircraft_utilization_fact('AircraftUtilization', flights, mant_event, aircraft_dim, temp_dim)
+    create_logbook_reporting_fact('LogBookReporting', logbook, aircraft_dim, months_dim, people_dim)
+
+    logging.info("Data transformed and dimensions/fact tables created and stored into staging area successfully.")
 
 def run_loading(dbc):
     pass
