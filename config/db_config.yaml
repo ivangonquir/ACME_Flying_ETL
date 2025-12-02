@@ -19,10 +19,9 @@ sources:
 
 target:
   dw:
-    type: oracle
-    host:
-    port:
-    user:
-    password:
-    db:
-    schema:
+    type: oracle+oracledb
+    host: ${DW_HOST}
+    port: ${DW_PORT}
+    user: ${DW_USER}
+    password: ${DW_PASSWORD}
+    sid: "ORABD"

@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import logging
 import sys
-from .settings import LOG_PATH, RAW_STAGING_DIR, TRANSFORMED_STAGING_DIR
+from .settings import LOG_PATH, TRANSFORMED_STAGING_DIR
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(

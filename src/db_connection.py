@@ -2,6 +2,7 @@ import yaml
 import os
 import logging
 import sys
+import oracledb
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from src.settings import LOG_PATH
@@ -62,8 +63,9 @@ class DBConnector:
         # format: dialect+driver://username:password@host:port/database
         if creds['type'] == 'postgresql':
             url = f"postgresql+psycopg2://{creds['user']}:{creds['password']}@{creds['host']}:{creds['port']}/{creds['db']}"
-        elif creds['type'] == 'oracle':
-            url = f"oracle+oracledb://{creds['user']}:{creds['password']}@{creds['host']}:{creds['port']}/{creds['db']}"
+        elif creds['type'] == 'oracle+oracledb':
+            dsn = oracledb.makedsn(creds['host'], creds['port'], sid=creds['sid'])
+            url = f"oracle+oracledb://{creds['user']}:{creds['password']}@{dsn}"
         else:
             raise ValueError(f"Unsupported DB type: {creds['type']}")
 

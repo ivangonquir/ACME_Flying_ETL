@@ -2,12 +2,13 @@ import logging
 import sys
 import argparse
 import pandas as pd
-from src.settings import LOG_PATH, CONFIG_PATH, RAW_STAGING_DIR
+from src.settings import LOG_PATH, CONFIG_PATH, RAW_STAGING_DIR, TRANSFORMED_STAGING_DIR
 from src.db_connection import DBConnector
 from src.extract import extract_table, extract_csv
 from src.queries import AIMS_EXTRACTION, AMOS_EXTRACTION, CSV_EXTRACTION
 from src.transform_dims import create_aircraft_dim, create_people_dim, create_temporal_dims
 from src.transform_facts import create_aircraft_utilization_fact, create_logbook_reporting_fact
+from src.load import load_table
 
 # setup logging (write on both log file and terminal)
 logging.basicConfig(
@@ -67,7 +68,27 @@ def run_transformation():
     logging.info("Data transformed and dimensions/fact tables created and stored into staging area successfully.")
 
 def run_loading(dbc):
-    pass
+    # read transformed dimensions and facts
+    aircraft_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/AircraftDimension.parquet')
+    temp_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/TemporalDimension.parquet')
+    months_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/Months.parquet')
+    people_dim = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/PeopleDimension.parquet')
+    aircraft_utilization_fact = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/AircraftUtilization.parquet')
+    logbook_reporting_fact = pd.read_parquet(f'{TRANSFORMED_STAGING_DIR}/LogBookReporting.parquet')
+
+    # get DW oracle connection
+    dw_connection = dbc.get_connection("dw")
+
+    # load dimensions
+    load_table(dw_connection, aircraft_dim, "AIRCRAFTDIMENSION")
+    load_table(dw_connection, months_dim, "MONTHS")
+    # ...
+
+    # load facts
+
+    logging.info("...")
+    
+    
 
 def main():
     # setup arguments
