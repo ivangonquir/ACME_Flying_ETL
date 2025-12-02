@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 import argparse
 import pandas as pd
 from src.settings import LOG_PATH, CONFIG_PATH, RAW_STAGING_DIR, TRANSFORMED_STAGING_DIR
@@ -42,7 +43,25 @@ def run_extraction(dbc):
     logging.info("Data successfully extracted and stored into staging area.")
 
 def run_validation():
-    pass
+    logging.info("Starting validation process...")
+    
+    # Helper to safely load parquet files or return empty DF if not found
+    def safe_read(filename):
+        path = f'{RAW_STAGING_DIR}/{filename}.parquet'
+        if os.path.exists(path):
+            return pd.read_parquet(path)
+        logging.warning(f"File {filename}.parquet not found. Skipping related validations.")
+        return pd.DataFrame()
+
+    # Load data needed for validation
+    # Adjust filenames to match exactly what your 'extract_table' functions output
+    flights = safe_read('flights')
+    logbook = safe_read('technicallogbookorders') # Assumed filename based on query dict key
+    maintenance = safe_read('maintenanceevents')
+    op_interruption = safe_read('operationinterruption')
+    work_packages = safe_read('workpackages')
+    work_orders = safe_read('workorders')
+    attachments = safe_read('attachments')
 
 def run_transformation():
     logging.info("Starting data transformation - Dimensions creation...")
