@@ -103,7 +103,7 @@ def run_loading(dbc):
     logging.info("Connection to Oracle DB established.")
 
     # delete tables before inserting (to allow rerun ETL)
-    clean_target_tables(dw_connection)
+    # clean_target_tables(dw_connection)
 
     # load dimensions and facts into oracle database (DW)
     loading_sequence = [

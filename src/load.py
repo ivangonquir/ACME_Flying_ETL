@@ -69,7 +69,8 @@ def load_table(dw_connection, df, table_name):
             con=dw_connection,
             if_exists='append',  
             index=False,         
-            chunksize=1000,      
+            #chunksize=1000,
+            chunksize = 200,      
             method=None          
         )
         logging.info(f"Successfully loaded data into {table_name}.")

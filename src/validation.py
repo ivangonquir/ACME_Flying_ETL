@@ -23,11 +23,14 @@ def validate_identifiers(work_packages, work_orders, maintenance_events, attachm
         if col in df.columns:
             if not df[col].is_unique:
                 duplicates = df[col].duplicated().sum()
-                logging.error(f"[{rule}] VIOLATION: {col} is not unique. {duplicates} duplicates found.")
+                df.drop_duplicates(subset = [col], inplace=True)
+                logging.error(f"[{rule}] VIOLATION: {col} is not unique. {duplicates} duplicates removed.")
             else:
                 logging.info(f"[{rule}] Passed: {col} is unique.")
         else:
             logging.warning(f"[{rule}] Column {col} not found in dataframe.")
+
+    
 
 def validate_domains_and_nulls(logbook, maintenance_events):
     """
@@ -40,6 +43,7 @@ def validate_domains_and_nulls(logbook, maintenance_events):
         valid_kinds = ['PIREP', 'MAREP']
         invalid_mask = ~logbook['reporteurclass'].isin(valid_kinds)
         if invalid_mask.any():
+            logbook = logbook[~invalid_mask]
             logging.error(f"[BR5] VIOLATION: Found invalid ReportKind values: {logbook[invalid_mask]['reporteurclass'].unique()}")
         else:
             logging.info("[BR5] Passed: ReportKind values are valid.")
@@ -52,6 +56,7 @@ def validate_domains_and_nulls(logbook, maintenance_events):
         # Filter out NaNs if they are allowed, otherwise remove .dropna()
         invalid_mel = maintenance_events[~maintenance_events[mel_col].isin(valid_mel) & maintenance_events[mel_col].notna()]
         if not invalid_mel.empty:
+             maintenance_events = maintenance_events[~invalid_mel]
              logging.error(f"[BR6] VIOLATION: Invalid MEL Categories found: {invalid_mel[mel_col].unique()}")
         else:
             logging.info("[BR6] Passed: MEL Categories are valid.")
@@ -60,9 +65,11 @@ def validate_domains_and_nulls(logbook, maintenance_events):
     if 'airport' in maintenance_events.columns:
         missing_airport = maintenance_events['airport'].isna().sum()
         if missing_airport > 0:
+            maintenance_events.dropna(subset = ['airport'], inplace = True)
             logging.error(f"[BR7] VIOLATION: {missing_airport} MaintenanceEvents are missing 'airport'.")
         else:
             logging.info("[BR7] Passed: All MaintenanceEvents have airports.")
+    return logbook, maintenance_events
 
 def validate_maintenance_logic(op_interruption, maintenance_events, flights):
     """
@@ -74,14 +81,14 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
     # flightID structure: Date(6)-Origin(3)... e.g., 230101-LHR...
     if 'flightID' in op_interruption.columns and 'departure' in op_interruption.columns:
         # Extract date string from flightID (first 6 chars)
-        op_interruption['flightID_date_str'] = op_interruption['flightID'].astype(str).str[:6]
         # Convert to datetime (assuming format YYMMDD)
-        op_interruption['flightID_date'] = pd.to_datetime(op_interruption['flightID_date_str'], format='%d%m%y', errors='coerce').dt.date
+        op_interruption['flightID_date'] = pd.to_datetime(op_interruption['flightID'].astype(str).str[:6], format='%d%m%y', errors='coerce').dt.date
         op_interruption['dep_date'] = pd.to_datetime(op_interruption['departure']).dt.date
 
-        mismatches = op_interruption[op_interruption['flightID_date'] != op_interruption['dep_date']]
+        mismatches = op_interruption['flightID_date'] != op_interruption['dep_date']
         if not mismatches.empty:
-             logging.error(f"[BR8] VIOLATION: {len(mismatches)} records where departure date does not match flightID date.")
+             op_interruption[mismatches]['departure'] = op_interruption[mismatches]['flightID_date']
+             logging.error(f"[BR8] VIOLATION: {sum(mismatches)} departure records were replaced by the flightID date.")
         else:
             logging.info("[BR8] Passed: OpInterruption dates match flightID.")
 
@@ -96,6 +103,9 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
         
         # Check 1: Must exist in Flights
         missing_flights = merged[merged['_merge'] == 'left_only'] # This means that only appears in op_interruption
+        wrong_flights = op_interruption['flightID'] == merged['flightID']
+        op_interruption = op_interruption[~wrong_flights]
+
         if not missing_flights.empty:
             logging.error(f"[BR9] VIOLATION: {len(missing_flights)} OpInterruptions refer to non-existent flights.")
         
@@ -104,6 +114,7 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
         existing = merged[merged['_merge'] == 'both']
         not_delayed = existing[existing['delayCode'].isna()]
         if not_delayed.empty:
+            op_interruption.dropna(subset=['delayCode'], inplace=True)
             logging.info("[BR9] Passed: All interrupted flights exist and are delayed.")
         else:
             logging.error(f"[BR9] VIOLATION: {len(not_delayed)} interrupted flights exist but are NOT marked as delayed.")
@@ -136,7 +147,7 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
 
 
          # Check for "Safety" type
-         """
+        """
          TO-DO: How to check for Safety type
         safety_evs = maintenance_events[maintenance_events['kind'] == 'Safety']
         long_safety = safety_evs[safety_evs['duration'] < pd.Timedelta(hours=1)]
@@ -294,6 +305,6 @@ def run_all_validations(dfs_dict):
     )
     
     logging.info("VALIDATION COMPLETE")
+
+
 if __name__ == '__main__':
-    me = pd.read_parquet('../data/raw_staging/maintenanceevents.parquet')
-    print(me.kind.unique())
