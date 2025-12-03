@@ -50,6 +50,3 @@ CREATE TABLE LogBookReporting (
     FOREIGN KEY (monthID) REFERENCES Months(ID),
     FOREIGN KEY (personID) REFERENCES PeopleDimension(ID)
 );
-
-
-SELECT 
