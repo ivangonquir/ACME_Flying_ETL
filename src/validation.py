@@ -128,20 +128,20 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
         # Revision -> Days to 1 month
         
         # Check for "Maintenance" type
-        maint_evs = maintenance_events[maintenance_events['kind'] == 'Maintenance']
-        long_maint = maint_evs[maint_evs['duration'] > pd.Timedelta(days=1)]
+        inv_maints = maintenance_events['kind'] == 'Maintenance' & maintenance_events['duration'] > pd.Timedelta(days = 1)
         
-        if not long_maint.empty:
-            logging.warning(f"[BR10] WARNING: {len(long_maint)} 'Maintenance' events lasted longer than 1 day.")
+        if not inv_maints.empty:
+            maintenance_events = maintenance_events[~inv_maints]
+            logging.warning(f"[BR10] WARNING: {len(inv_maints)} 'Maintenance' events lasted longer than 1 day.")
         else:
             logging.info("[BR10] Passed (partial): Maintenance duration looks reasonable.")
 
          # Check for "Delay" type
-        delay_evs = maintenance_events[maintenance_events['kind'] == 'Delay']
-        long_delay = delay_evs[delay_evs['duration'] < pd.Timedelta(hours=1)]
+        inv_delays = maintenance_events['kind'] == 'Delay' & maintenance_events['duration'] > pd.Timedelta(hours = 1)
         
-        if not long_delay.empty:
-            logging.warning(f"[BR10] WARNING: {len(long_delay)} 'Delay' events lasted longer than 1 hour.")
+        if not inv_delays.empty:
+            maintenance_events = maintenance_events[~inv_delays]
+            logging.warning(f"[BR10] WARNING: {len(inv_delays)} 'Delay' events lasted longer than 1 hour.")
         else:
             logging.info("[BR10] Passed (partial): Delay duration looks reasonable.")
 
@@ -159,20 +159,20 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
         """
 
         # Check for "AircraftOnGround" type
-        Air_evs = maintenance_events[maintenance_events['kind'] == 'AircraftOnGround']
-        long_Air = Air_evs[Air_evs['duration'] < pd.Timedelta(hours=24)]
-        
-        if not long_Air.empty:
-            logging.warning(f"[BR10] WARNING: {len(long_Air)} 'Air' events lasted longer than 24 hours.")
+        inv_grounds = maintenance_events['kind'] == 'AircraftOnGround' & (maintenance_events['duration'] > pd.Timedelta(hours = 24) or maintenance_events['duration'] < pd.Timedelta(hours = 1)) 
+
+        if not inv_grounds.empty:
+            maintenance_events = maintenance_events[~inv_grounds]
+            logging.warning(f"[BR10] WARNING: {len(inv_grounds)} 'Air' events lasted longer than 24 hours.")
         else:
             logging.info("[BR10] Passed (partial): Air duration looks reasonable.")
 
         # Check for "Revision" type
-        Rev_evs = maintenance_events[maintenance_events['kind'] == 'Revision']
-        long_Rev = Rev_evs[Rev_evs['duration'] < pd.Timedelta(months=1)]
+        inv_revisions = maintenance_events['kind'] == 'Revision' & (maintenance_events['duration'] < pd.Timedelta(days = 1) or maintenance_events['duration'] > pd.Timedelta(months = 1))
         
-        if not long_Rev.empty:
-            logging.warning(f"[BR10] WARNING: {len(long_Rev)} 'Revision' events lasted longer than 24 hours.")
+        if not inv_revisions.empty:
+            maintenance_events = maintenance_events[~inv_revisions]
+            logging.warning(f"[BR10] WARNING: {len(inv_revisions)} 'Revision' events lasted longer than 24 hours.")
         else:
             logging.info("[BR10] Passed (partial): Revision duration looks reasonable.")
 
@@ -187,20 +187,22 @@ def validate_flight_logic(flights):
     # Regex: 6 digits (date), 3 chars (orig), 3 chars (dest), 4 digits (num), 6 chars (reg)
     # Note: Regex adjusted based on common IATA/ICAO lengths provided in description
     # Pattern: Date(6)-Origin(3)-Dest(3)-FlightNum(4)-Reg(6)
-    #pattern = re.compile(r'^\d{6}-[A-Z]{3}-[A-Z]{3}-\d{4}-[A-Z0-9]{6}$')
+    #pattern = re.compile(r'^\d{6}-[A-Z]{3}-[A-Z]{3}-\d{4}-[A-Z0-9]{6}$') (this was the one proposed by Claude)
     pattern = re.compile(r'^\d{6}-[A-Z]{3}-[A-Z]{3}-\d{4}-[A-Z]{2}-[A-Z]{3}$')
     
-    invalid_ids = flights[~flights['flightID'].astype(str).str.match(pattern)]
+    invalid_ids = ~flights['flightID'].astype(str).str.match(pattern)
     if not invalid_ids.empty:
+        flights = flights[~invalid_ids]
         logging.error(f"[BR12] VIOLATION: {len(invalid_ids)} flightIDs do not match the required format.")
     else:
         logging.info("[BR12] Passed: flightID format valid.")
 
-    # BR13 & BR18: Arrival > Departure (Scheduled and Actual)
+    # BR13 & BR18: Arrival > Departure (Scheduled and Actual)  # To check: should we work with flights or slots??????
     # Scheduled
     if 'scheduledarrival' in flights.columns and 'scheduleddeparture' in flights.columns:
-        bad_sched = flights[flights['scheduledarrival'] <= flights['scheduleddeparture']]
+        bad_sched = flights['scheduledarrival'] <= flights['scheduleddeparture']
         if not bad_sched.empty:
+            flights = flights[~bad_sched]
             logging.error(f"[BR13] VIOLATION: {len(bad_sched)} flights arrive before they depart (Scheduled).")
         else:
             logging.info("[BR13] Passed: Scheduled Arrival > Departure.")
@@ -208,9 +210,10 @@ def validate_flight_logic(flights):
     # Actual
     if 'actualarrival' in flights.columns and 'actualdeparture' in flights.columns:
         # Filter out NaNs (cancelled flights might not have actuals)
-        actuals = flights.dropna(subset=['actualarrival', 'actualdeparture'])
-        bad_act = actuals[actuals['actualarrival'] <= actuals['actualdeparture']]
+        flights.dropna(subset=['actualarrival', 'actualdeparture'], inplace = True)
+        bad_act = flights['actualarrival'] <= flights['actualdeparture']
         if not bad_act.empty:
+            flights = flights[~bad_act]
             logging.error(f"[BR18] VIOLATION: {len(bad_act)} flights arrive before they depart (Actual).")
         else:
             logging.info("[BR18] Passed: Actual Arrival > Departure.")
@@ -219,8 +222,9 @@ def validate_flight_logic(flights):
     # Assuming duration is calculated or diff between arr and dep
     if 'scheduledarrival' in flights.columns:
         flights['calc_duration'] = flights['scheduledarrival'] - flights['scheduleddeparture']
-        long_flights = flights[flights['calc_duration'] > pd.Timedelta(hours=24)]
+        long_flights = flights['calc_duration'] > pd.Timedelta(hours=24)
         if not long_flights.empty:
+             flights = flights[~long_flights]
              logging.error(f"[BR14] VIOLATION: {len(long_flights)} flights differ by more than 24 hours.")
         else:
              logging.info("[BR14] Passed: No flights exceed 24 hours.")
@@ -231,8 +235,8 @@ def validate_flight_logic(flights):
         # Check this: should we sort by aircraft??
         df_sorted = flights.sort_values(by=['aircraftregistration', 'scheduleddeparture'])
         
-        # Shift creates a new column with the *previous* row's arrival time
-        df_sorted['prev_arrival'] = df_sorted.groupby('aircraftregistration')['scheduledarrival'].shift(1)
+        # Shift creates a new column with the *previous* row's arrival time. QUESTION: Maybe we don't have to group by??????
+        df_sorted['prev_arrival'] = df_sorted.groupby('aircraftregistration')['scheduledarrival'].shift(1) # Each row of this new column has the value of the previous row in scheduledarrival
         
         # Overlap exists if Current Departure < Previous Arrival
         overlaps = df_sorted[df_sorted['scheduleddeparture'] < df_sorted['prev_arrival']]
