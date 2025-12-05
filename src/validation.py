@@ -31,6 +31,9 @@ def validate_identifiers(work_packages, work_orders, maintenance_events, attachm
             logging.warning(f"[{rule}] Column {col} not found in dataframe.")
 
     
+    return work_packages, work_orders, maintenance_events, attachments, flights
+
+    
 
 def validate_domains_and_nulls(logbook, maintenance_events):
     """
@@ -60,6 +63,8 @@ def validate_domains_and_nulls(logbook, maintenance_events):
              logging.error(f"[BR6] VIOLATION: Invalid MEL Categories found: {invalid_mel[mel_col].unique()}")
         else:
             logging.info("[BR6] Passed: MEL Categories are valid.")
+
+
 
     # BR7: Airport in MaintenanceEvents must have a value
     if 'airport' in maintenance_events.columns:
@@ -118,6 +123,8 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
             logging.info("[BR9] Passed: All interrupted flights exist and are delayed.")
         else:
             logging.error(f"[BR9] VIOLATION: {len(not_delayed)} interrupted flights exist but are NOT marked as delayed.")
+    
+  
 
     # BR10: Maintenance Duration Logic
     # Requires 'kind' and 'duration' columns. Duration assumed to be Timedelta.
@@ -175,6 +182,8 @@ def validate_maintenance_logic(op_interruption, maintenance_events, flights):
             logging.warning(f"[BR10] WARNING: {len(inv_revisions)} 'Revision' events lasted longer than 24 hours.")
         else:
             logging.info("[BR10] Passed (partial): Revision duration looks reasonable.")
+
+    return op_interruption, maintenance_events, flights
 
 
 def validate_flight_logic(flights):
@@ -240,8 +249,10 @@ def validate_flight_logic(flights):
         
         # Overlap exists if Current Departure < Previous Arrival
         overlaps = df_sorted[df_sorted['scheduleddeparture'] < df_sorted['prev_arrival']]
+        idx_overlaps = flights['scheduleddeparture'] == overlaps['scheduleddeparture'] & flights['aircraftregistration'] == overlaps['aircraftregistration']
         
         if not overlaps.empty:
+            flights = flights[~idx_overlaps]
             logging.error(f"[BR16] VIOLATION: {len(overlaps)} overlapping flight slots found for the same aircraft.")
             # Optional: print sample
             # print(overlaps[['flightID', 'aircraftregistration', 'scheduleddeparture', 'prev_arrival']].head())
@@ -250,7 +261,7 @@ def validate_flight_logic(flights):
 
     # BR17: Origin/Dest match flightID
     # flightID structure: Date-Origin-Dest-...
-    if 'origin' in flights.columns and 'destination' in flights.columns:
+    if 'departureairport' in flights.columns and 'arrivalairport' in flights.columns:
         # Extract from ID
         # Split string by '-'
         # ID parts: [0]Date, [1]Origin, [2]Dest, ...
@@ -260,15 +271,18 @@ def validate_flight_logic(flights):
             flights['id_dest'] = id_parts[2]
             
             # Check Origin
-            bad_orig = flights[flights['origin'] != flights['id_origin']]
+            bad_orig = flights[flights['departureairport'] != flights['id_origin']]
             # Check Destination (Allowing for diversion? Rule says "unless diverted". 
             # If you have a 'diverted' flag, add: & (flights['diverted'] == False))
-            bad_dest = flights[flights['destination'] != flights['id_dest']]
+            bad_dest = flights[flights['arrivalairport'] != flights['id_dest']]
             
             if not bad_orig.empty or not bad_dest.empty:
+                flights = flights[~bad_orig]
+                flights = flights[~bad_dest]
                 logging.warning(f"[BR17] WARNING: {len(bad_orig) + len(bad_dest)} flights have airports mismatching their ID (Check for diversions).")
             else:
                 logging.info("[BR17] Passed: Airports match flightID.")
+    return flights
 
 # --- Wrapper Function to Run All ---
 def run_all_validations(dfs_dict):
@@ -283,32 +297,24 @@ def run_all_validations(dfs_dict):
         ...
     }
     """
+    work_packages=dfs_dict.get('work_pkg', pd.DataFrame())
+    work_orders=dfs_dict.get('work_orders', pd.DataFrame())
+    maintenance_events=dfs_dict.get('maintenance', pd.DataFrame())
+    attachments=dfs_dict.get('attachments', pd.DataFrame())
+    flights=dfs_dict.get('flights', pd.DataFrame())
+    logbook=dfs_dict.get('logbook', pd.DataFrame())
+    op_interruption=dfs_dict.get('op_interruption', pd.DataFrame())
     logging.info("STARTING DATA QUALITY VALIDATION")
     
-    validate_identifiers(
-        work_packages=dfs_dict.get('work_pkg', pd.DataFrame()),
-        work_orders=dfs_dict.get('work_orders', pd.DataFrame()),
-        maintenance_events=dfs_dict.get('maintenance', pd.DataFrame()),
-        attachments=dfs_dict.get('attachments', pd.DataFrame()),
-        flights=dfs_dict.get('flights', pd.DataFrame())
+    work_packages, work_orders, maintenance_events, attachments, flights = validate_identifiers(
+       work_packages, work_orders, maintenance_events, attachments, flights
     )
     
-    validate_domains_and_nulls(
-        logbook=dfs_dict.get('logbook', pd.DataFrame()),
-        maintenance_events=dfs_dict.get('maintenance', pd.DataFrame())
-    )
+    logbook, maintenance_events = validate_domains_and_nulls(logbook, maintenance_events)
     
-    validate_maintenance_logic(
-        op_interruption=dfs_dict.get('op_interruption', pd.DataFrame()),
-        maintenance_events=dfs_dict.get('maintenance', pd.DataFrame()),
-        flights=dfs_dict.get('flights', pd.DataFrame())
-    )
+    op_interruption, maintenance_events, flights = validate_maintenance_logic(op_interruption, maintenance_events, flights)
     
-    validate_flight_logic(
-        flights=dfs_dict.get('flights', pd.DataFrame())
-    )
+    flights = validate_flight_logic(flights)
     
     logging.info("VALIDATION COMPLETE")
 
-
-if __name__ == '__main__':
